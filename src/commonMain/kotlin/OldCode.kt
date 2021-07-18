@@ -62,3 +62,90 @@
 //    image.advance(0.25 * scale)
 //}
 
+//        var shortestPath = listOf<GridPoint>()
+//        var shortestDistance = Double.MAX_VALUE
+//
+//        getNextPossibleStepsToward(other, emptyList()).forEach { nextPossibleStep ->
+//            if (nextPossibleStep == other) {
+//                return@getPathTo emptyList()
+//            }
+//            val path = mutableListOf<GridPoint>()
+//            var nextPoint: GridPoint? = nextPossibleStep
+//            while (nextPoint != null && !path.contains(nextPoint) && path.totalDistance() < shortestDistance) {
+//                path += nextPoint
+//                nextPoint = nextPoint.getNextStepTowards(other, path)
+//
+//                if (nextPoint == other) {
+//                    path.add(nextPoint)
+//                    break
+//                }
+//            }
+//
+//            if (!path.contains(other)) {
+//                return@forEach
+//            }
+//
+//            val pathTotal = path.totalDistance()
+//            if (pathTotal < shortestDistance) {
+////                path.removeAll { it == other }
+//                shortestPath = path
+//                shortestDistance = pathTotal
+//            }
+//        }
+//
+//        return shortestPath
+
+//            if (target == null || (moveCommand != null && !moveCommand!!.isCompleted)) {
+//                return@addUpdater
+//            }
+//
+//            if (gridAdjacentTo(target!!)) {
+//                isAttacking = true
+//                if (attackJob == null) {
+//                    launchImmediately(ctx) {
+//                        image.rotateTo(Angle.between(gridPos, target!!.gridPos), time = 150.milliseconds, easing = Easing.SMOOTH)
+//                        attackJob = addFixedUpdater(1.timesPerSecond) {
+////                            println("[$name]: attack")
+//                        }
+//                    }
+//                }
+//            } else {
+//                isAttacking = false
+//                attackJob?.cancel()
+//                val path = getPathTo(target!!)
+//                if (path.isEmpty()) {
+//                    return@addUpdater
+//                }
+//                val nextNode = path[0]
+////                val nextNode = gridPos.getNextStepTowards(target!!.gridPos)!!
+//                if (prepareToMove(nextNode)) {
+//                    moveCommand = launchAsap(ctx) {
+//                        image.rotateTo(Angle.between(gridPos, nextNode), time = 150.milliseconds, easing = Easing.SMOOTH)
+//                        gridPos = nextNode
+//                        image.moveTo(nextNode.worldX, nextNode.worldY, time = 1.seconds, easing = Easing.SMOOTH)
+//                    }
+//                }
+//            }
+
+//movingToGridPos?.let { nextNode ->
+//    Grid.blockPos(nextNode)
+//    launchAsap(ctx) {
+//        image.rotateTo(Angle.between(gridPos, nextNode), time = 150.milliseconds, easing = Easing.SMOOTH)
+//
+//        println("[$name | ($gridPos)]: Moving to [$nextNode]")
+//        image.tween(this::x[nextNode.worldX], this::y[nextNode.worldY], time = 1.seconds, easing = Easing.LINEAR) {
+//            if (it != 1.0) {
+//                return@tween
+//            }
+//
+//            println("[$name | ($gridPos)]: COMPLETE: Moving to [$nextNode]")
+//            Grid.unblockPos(gridPos)
+//            gridPos = nextNode
+//            if (currentPath.isNotEmpty()) {
+//                movingToGridPos = currentPath.removeFirst()
+//                println("[$name | ($gridPos)]: Next movement to: [$movingToGridPos]")
+//            }
+//        }
+//    }
+//}
+

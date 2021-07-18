@@ -1,9 +1,12 @@
+
 import com.soywiz.kds.Array2
 import com.soywiz.korge.view.View
+import com.soywiz.korma.algo.AStar
 import com.soywiz.korma.geom.IPoint
 import com.soywiz.korma.geom.Point
 import com.soywiz.korma.geom.distanceTo
 import com.soywiz.korma.geom.ds.get
+import com.soywiz.korma.geom.toPoints
 import com.soywiz.korma.math.betweenInclusive
 import com.soywiz.korma.math.roundDecimalPlaces
 import kotlin.math.abs
@@ -60,43 +63,27 @@ object Grid {
         return grid.filter { !path.contains(it) && it != this && (it == other || !it.isBlocked) && abs(it.x - x) <= 1 && abs(it.y - y) <= 1 }
     }
 
-    fun GameUnit.getPathTo(other: GameUnit): List<GridPoint> {
-        return gridPos.getPathTo(other.gridPos)
-    }
-
-    fun GridPoint.getPathTo(other: GridPoint): List<GridPoint> {
-        var shortestPath = listOf<GridPoint>()
-        var shortestDistance = Double.MAX_VALUE
-
-        getNextPossibleStepsToward(other, emptyList()).forEach { nextPossibleStep ->
-            if (nextPossibleStep == other) {
-                return@getPathTo emptyList()
-            }
-            val path = mutableListOf<GridPoint>()
-            var nextPoint: GridPoint? = nextPossibleStep
-            while (nextPoint != null && !path.contains(nextPoint) && path.totalDistance() < shortestDistance) {
-                path += nextPoint
-                nextPoint = nextPoint.getNextStepTowards(other, path)
-
-                if (nextPoint == other) {
-                    path.add(nextPoint)
-                    break
-                }
-            }
-
-            if (!path.contains(other)) {
-                return@forEach
-            }
-
-            val pathTotal = path.totalDistance()
-            if (pathTotal < shortestDistance) {
-//                path.removeAll { it == other }
-                shortestPath = path
-                shortestDistance = pathTotal
+    fun GameUnit.getPathTo(other: GameUnit): MutableList<GridPoint> {
+        val pointToTarget = if (other.isAttacking || other.movingToGridPos == null) other.gridPos else other.movingToGridPos!!
+        // In path, if next 2 nodes end up on a different adjacent, drop the first node
+        val path = gridPos.getPathTo(pointToTarget)
+        if (path.size > 1) {
+            if (path[1].gridAdjacentTo(gridPos)) {
+                path.removeFirst()
             }
         }
 
-        return shortestPath
+        return path
+    }
+
+    fun GridPoint.getPathTo(other: GridPoint): MutableList<GridPoint> {
+        return AStar(gridWidth, gridHeight) { pathX, pathY ->
+            !(pathX == x.toInt() && pathY == y.toInt()) && grid[pathX, pathY].isBlocked
+        }.find(x.toInt(), y.toInt(), other.x.toInt(), other.y.toInt(), findClosest = true, diagonals = false)
+            .toPoints()
+            .drop(1)
+            .map { GridPoint(it.x.toDouble(), it.y.toDouble()) }
+            .toMutableList()
     }
 
     fun List<GridPoint>.totalDistance(): Double {
@@ -109,12 +96,26 @@ object Grid {
         return distance
     }
 
+    fun List<GridPoint>.isNowBlocked() = any { grid[it.x.toInt(), it.y.toInt()].isBlocked }
+
     fun GameUnit.gridDistance(other: GameUnit) = gridPos.distanceTo(other.gridPos)
 
     fun GameUnit.gridAdjacentTo(other: GameUnit): Boolean {
         val selfPos = gridPos
         val otherPos = other.gridPos
-        return abs(selfPos.x - otherPos.x) <= 1 && abs(selfPos.y - otherPos.y) <= 1
+        return selfPos.gridAdjacentTo(otherPos)
+    }
+
+    fun GridPoint.gridAdjacentTo(other: GridPoint): Boolean {
+        return abs(x - other.x) <= 1 && abs(y - other.y) <= 1
+    }
+
+    fun blockPos(pos: GridPoint) {
+        grid[pos].isBlocked = true
+    }
+
+    fun unblockPos(pos: GridPoint) {
+        grid[pos].isBlocked = false
     }
 }
 

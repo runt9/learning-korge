@@ -1,27 +1,34 @@
 import Grid.addRandomlyToGrid
+import com.soywiz.korev.Key
 import com.soywiz.korge.Korge
+import com.soywiz.korge.input.keys
+import com.soywiz.korge.view.alpha
+import com.soywiz.korge.view.graphics
+import com.soywiz.korge.view.roundRect
+import com.soywiz.korge.view.xy
 import com.soywiz.korim.color.Colors
 import com.soywiz.korim.format.readBitmap
 import com.soywiz.korio.file.std.resourcesVfs
 
 suspend fun main() = Korge(width = 1280, height = 720, bgcolor = Colors["#2b2b2b"], virtualWidth = virtualWidth, virtualHeight = virtualHeight) {
-//	graphics {
-//		(0..gridWidth).forEach { x ->
-//			(0..gridHeight).forEach { y ->
-//				roundRect((cellSize - 10).toDouble(), (cellSize - 10).toDouble(), 5.0, fill = Colors["#cccccc"]).xy(cellSize * x + 5, cellSize * y + 5)
-//			}
-//		}
-//	}
+	graphics {
+		(0..gridWidth).forEach { x ->
+			(0..gridHeight).forEach { y ->
+				roundRect((cellSize - 10).toDouble(), (cellSize - 10).toDouble(), 5.0, fill = Colors["#cccccc"]).xy(cellSize * x + 5, cellSize * y + 5)
+					.alpha(0.5)
+			}
+		}
+	}
 
 	val redTeam = resourcesVfs["redArrow.png"].readBitmap()
 	val blueTeam = resourcesVfs["blueArrow.png"].readBitmap()
 
-	repeat(8) {
+	repeat(5) {
 		val gridEntry = addRandomlyToGrid(0, 5)
 		UnitRegistry.team1.add(GameUnit(coroutineContext, this, "left$it", 0, gridEntry.worldX.toInt(), gridEntry.worldY.toInt(), UnitRegistry.team2, redTeam))
 	}
 
-	repeat(8) {
+	repeat(5) {
 		val gridEntry = addRandomlyToGrid(gridWidth - 6, gridWidth - 1)
 		UnitRegistry.team2.add(
 			GameUnit(
@@ -35,5 +42,25 @@ suspend fun main() = Korge(width = 1280, height = 720, bgcolor = Colors["#2b2b2b
 				blueTeam
 			)
 		)
+	}
+
+	var previousSpeed = speed
+	keys {
+		down(Key.SPACE) {
+			if (speed == 0.0) {
+				speed = previousSpeed
+			} else {
+				previousSpeed = speed
+				speed = 0.0
+			}
+		}
+
+		down(Key.DOWN) {
+			speed /= 2
+		}
+
+		down(Key.UP) {
+			speed *= 2
+		}
 	}
 }
