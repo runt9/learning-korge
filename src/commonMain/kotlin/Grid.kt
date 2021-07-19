@@ -117,6 +117,10 @@ object Grid {
     fun unblockPos(pos: GridPoint) {
         grid[pos].isBlocked = false
     }
+
+    fun findClosestToWorldPos(pos: Point): GridPoint {
+        return GridPoint.fromWorldPoint(pos)
+    }
 }
 
 class GridPoint(

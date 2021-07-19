@@ -1,3 +1,4 @@
+
 import Grid.getPathTo
 import Grid.gridAdjacentTo
 import Grid.gridPos
@@ -9,12 +10,13 @@ import com.soywiz.korge.view.Container
 import com.soywiz.korge.view.Image
 import com.soywiz.korge.view.View
 import com.soywiz.korge.view.addFixedUpdater
-import com.soywiz.korge.view.addTo
 import com.soywiz.korge.view.addUpdater
+import com.soywiz.korge.view.alpha
+import com.soywiz.korge.view.anchor
 import com.soywiz.korge.view.center
+import com.soywiz.korge.view.circle
+import com.soywiz.korge.view.collidesWithShape
 import com.soywiz.korge.view.image
-import com.soywiz.korge.view.name
-import com.soywiz.korge.view.rotation
 import com.soywiz.korge.view.tween.rotateTo
 import com.soywiz.korge.view.xy
 import com.soywiz.korim.bitmap.Bitmap
@@ -31,53 +33,62 @@ import com.soywiz.korma.geom.degrees
 import com.soywiz.korma.geom.sine
 import com.soywiz.korma.geom.vector.LineCap
 import com.soywiz.korma.interpolation.Easing
-import kotlinx.coroutines.Job
 import kotlin.coroutines.CoroutineContext
+import kotlin.random.Random
 
 class GameUnit(
     private val ctx: CoroutineContext,
-    private val parent: Container,
     name: String,
     initialRotation: Int,
     initialX: Int,
     initialY: Int,
     private val enemyTeam: Set<GameUnit>,
     bitmap: Bitmap
-) {
-    //    private val image: View = parent.image(bitmap.sliceWithSize(100, 100, 50, 50))
-    val image: View = parent.image(bitmap)
-        .center()
-        .name(name)
-        .xy(initialX, initialY)
-        .rotation(initialRotation.degrees)
-        .addTo(parent)
+) : Container() {
+    val body: View = image(bitmap).center()
+
     private var target: GameUnit? = null
     private var attackJob: Cancellable? = null
-    private var moveCommand: Job? = null
     var isAttacking = false
     private var currentPath: MutableList<GridPoint> = mutableListOf()
     private var currentPathGraphic: Image? = null
-    var gridPos = image.gridPos()
+    private val attackRange = circle(cellSize.toDouble() / 2 + 5).anchor(0.25, 0.25).alpha(0.1)
+
+    //    var gridPos = gridPos()
+    val gridPos
+        get() = gridPos()
     var movingToGridPos: GridPoint? = null
 
     init {
-        image.scaledWidth = (cellSize - 10).toDouble()
-        image.scaledHeight = (cellSize - 10).toDouble()
+        this.name = name
+        xy(initialX, initialY)
+//        gridPos = gridPos()
+        rotation = initialRotation.degrees
+        body.speed = Random.nextDouble(0.75, 1.25)
 
-        image.addUpdater {
+        addUpdater {
             val scale = it / 16.milliseconds
+
+            if (attackRange.collidesWithShape(enemyTeam.filter { it != target }.map { it.body })) {
+                target = enemyTeam.filter { it != target }.find { attackRange.collidesWithShape(it.body) }
+            }
 
             if (target == null) {
                 refreshTargetAndPath()
                 return@addUpdater
             }
 
-            if (gridAdjacentTo(target!!)) {
+            if (currentPath.isNowBlocked()) {
+                refreshTargetAndPath()
+            }
+
+            if (attackRange.collidesWithShape(target!!.body)) {
+                finishPreviousMovement()
                 isAttacking = true
                 currentPathGraphic?.removeFromParent()
                 if (attackJob == null) {
                     launchImmediately(ctx) {
-                        image.rotateTo(Angle.between(image.pos, target!!.image.pos), time = 150.milliseconds, easing = Easing.SMOOTH)
+                        rotateTo(Angle.between(pos, target!!.pos), time = 150.milliseconds, easing = Easing.SMOOTH)
                         attackJob = addFixedUpdater(1.timesPerSecond) {
 //                            println("[$name]: attack")
                         }
@@ -96,35 +107,35 @@ class GameUnit(
                 }
 
                 movingToGridPos?.run {
-                    advance(0.25 * scale)
+                    advance(0.5 * scale * speed)
                 }
             }
         }
     }
 
     private fun atDestination(): Boolean {
-        return movingToGridPos?.let { image.pos.distanceTo(it.worldX, it.worldY) <= 5 } ?: false
+        return movingToGridPos?.let { pos.distanceTo(it.worldX, it.worldY) <= 10 } ?: false
     }
 
     private fun acquireTarget() {
-        target = enemyTeam.minByOrNull { this.getPathTo(it).totalDistance() }
+        target = enemyTeam.find { gridAdjacentTo(it) } ?: enemyTeam.minByOrNull { getPathTo(it).totalDistance() }
     }
 
     private fun refreshTargetAndPath() {
         val previousTarget = target
         acquireTarget()
         target?.let {
-            if (previousTarget == it && !currentPath.isNowBlocked() && it.isAttacking) {
+            if (previousTarget == it && !currentPath.isNowBlocked() && it.isAttacking || it.movingToGridPos?.gridAdjacentTo(gridPos) == true) {
                 return@let
             }
 
             currentPath = getPathTo(it).toMutableList()
             currentPathGraphic?.removeFromParent()
-            currentPathGraphic = parent.image(NativeImage(640, 360).context2d {
+            currentPathGraphic = parent?.image(NativeImage(640, 360).context2d {
                 lineWidth = 0.05
                 lineCap = LineCap.ROUND
                 stroke(Colors.WHITE) {
-                    moveTo(image.x, image.y)
+                    moveTo(x, y)
                     currentPath.forEach { gp ->
                         lineTo(gp.worldX, gp.worldY)
                     }
@@ -138,24 +149,22 @@ class GameUnit(
         movingToGridPos = if (currentPath.isNotEmpty()) currentPath.removeFirst() else null
 
         movingToGridPos?.let { nextNode ->
-            println("[${image.name} | ($gridPos)]: Moving to [$nextNode]")
+            println("[${name} | ($gridPos)]: Moving to [$nextNode]")
             Grid.blockPos(nextNode)
+            Grid.unblockPos(gridPos)
             launch(ctx) {
-                image.rotateTo(Angle.between(gridPos, nextNode), time = 50.milliseconds, easing = Easing.SMOOTH)
+                rotateTo(Angle.between(gridPos, nextNode), time = 50.milliseconds, easing = Easing.SMOOTH)
             }
         }
     }
 
     private fun finishPreviousMovement() {
-        movingToGridPos?.let { nextNode ->
-            println("[${image.name} | ($gridPos)]: COMPLETE: Moving to [$nextNode]")
-            Grid.unblockPos(gridPos)
-            gridPos = nextNode
-        }
+//        gridPos = Grid.findClosestToWorldPos(pos)
+        Grid.blockPos(gridPos)
     }
-}
 
-fun View.advance(amount: Double) = this.apply {
-    x += (rotation).cosine * amount
-    y += (rotation).sine * amount
+    fun advance(amount: Double) {
+        x += (rotation).cosine * amount
+        y += (rotation).sine * amount
+    }
 }
