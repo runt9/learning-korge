@@ -1,15 +1,24 @@
 
 import com.soywiz.kds.Array2
+import com.soywiz.korge.view.View
+import com.soywiz.korma.algo.AStar
 import com.soywiz.korma.geom.IPoint
 import com.soywiz.korma.geom.Point
+import com.soywiz.korma.geom.distanceTo
+import com.soywiz.korma.geom.toPoints
 import com.soywiz.korma.math.betweenInclusive
 import com.soywiz.korma.math.roundDecimalPlaces
+import kotlin.math.abs
 
 object Grid {
     private val grid = Array2.withGen(gridWidth, gridHeight) { x, y -> GridPoint(x.toDouble(), y.toDouble()) }
 
     private fun getFromGrid(x: Int, y: Int): GridPoint {
         return grid[x, y]
+    }
+
+    private fun getFromGrid(gridPoint: GridPoint): GridPoint {
+        return getFromGrid(gridPoint.x.toInt(), gridPoint.y.toInt())
     }
 
     fun addRandomlyToGrid(minX: Int, maxX: Int): GridPoint {
@@ -24,6 +33,106 @@ object Grid {
         val point = getFromGrid(x, y)
         point.isBlocked = true
         return point
+    }
+
+    fun View.gridPos(): GridPoint {
+        return pos.toGridPoint()
+    }
+
+    private fun Point.toGridPoint(): GridPoint {
+        return GridPoint.fromWorldPoint(this)
+    }
+
+    fun GameUnit.prepareToMove(toPoint: GridPoint): Boolean {
+        val current = gridPos
+        if (getFromGrid(toPoint).isBlocked) {
+            return false
+        }
+
+        getFromGrid(current).isBlocked = false
+        getFromGrid(toPoint).isBlocked = true
+        return true
+    }
+
+    fun GridPoint.getNextStepTowards(other: GridPoint, path: MutableList<GridPoint>): GridPoint? {
+        return getNextPossibleStepsToward(other, path).minByOrNull { it.distanceTo(other) }
+    }
+
+    fun GridPoint.getNextPossibleStepsToward(other: GridPoint, path: List<GridPoint>): List<GridPoint> {
+        return grid.filter { !path.contains(it) && it != this && (it == other || !it.isBlocked) && abs(it.x - x) <= 1 && abs(it.y - y) <= 1 }
+    }
+
+    fun GameUnit.getPathTo(other: GameUnit): MutableList<GridPoint> {
+        val pointToTarget = if (other.isAttacking || other.movingToGridPos == null) other.gridPos else other.movingToGridPos!!
+        // In path, if next 2 nodes end up on a different adjacent, drop the first node
+        val path = gridPos.getPathTo(pointToTarget)
+        if (path.size > 1) {
+            if (path[1].isAdjacentTo(gridPos)) {
+                path.removeFirst()
+            }
+        }
+
+        return path
+    }
+
+    fun GridPoint.getPathTo(other: GridPoint): MutableList<GridPoint> {
+        return AStar(gridWidth, gridHeight) { pathX, pathY ->
+            !(pathX == x.toInt() && pathY == y.toInt()) && grid[pathX, pathY].isBlocked
+        }.find(x.toInt(), y.toInt(), other.x.toInt(), other.y.toInt(), findClosest = true, diagonals = false)
+            .toPoints()
+            .drop(1)
+            .map { GridPoint(it.x.toDouble(), it.y.toDouble()) }
+            .toMutableList()
+    }
+
+    fun List<GridPoint>.totalDistance(): Double {
+        var distance = 0.0
+        forEachIndexed { index, gridPoint ->
+            if (index != size - 1) {
+                distance += gridPoint.distanceTo(elementAt(index + 1))
+            }
+        }
+        return distance
+    }
+
+    fun List<GridPoint>.isNowBlocked() = any { grid[it.x.toInt(), it.y.toInt()].isBlocked }
+
+    fun GameUnit.gridDistance(other: GameUnit) = gridPos.distanceTo(other.gridPos)
+
+    fun GameUnit.isAdjacentTo(others: Collection<GameUnit>): Boolean {
+        return others.any { it.isAdjacentTo(this) }
+    }
+
+    fun GameUnit.isAdjacentTo(other: GameUnit): Boolean {
+        val selfPos = gridPos
+        val otherPos = other.gridPos
+        return selfPos.isAdjacentTo(otherPos)
+    }
+
+    fun GridPoint.isAdjacentTo(other: GridPoint): Boolean {
+        return isWithinRange(other, 1)
+    }
+
+    fun GameUnit.isWithinRange(others: Collection<GameUnit>, range: Int): Boolean {
+        return others.any { it.isWithinRange(this, range) }
+    }
+
+    fun GameUnit.isWithinRange(other: GameUnit, range: Int): Boolean {
+        val selfPos = gridPos
+        val otherPos = other.gridPos
+        return selfPos.isWithinRange(otherPos, range)
+    }
+
+    fun GridPoint.isWithinRange(other: GridPoint, range: Int): Boolean {
+        return abs(x - other.x) <= range && abs(y - other.y) <= range
+    }
+
+    fun blockPos(pos: GridPoint) {
+        getFromGrid(pos).isBlocked = true
+    }
+
+    fun unblockPos(pos: GridPoint) {
+        getFromGrid(pos).isBlocked = false
     }
 }
 
