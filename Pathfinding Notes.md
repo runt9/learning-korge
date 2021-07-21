@@ -28,7 +28,7 @@ Pathfinding thought:
         - XY towards enemy side
         - Y only, no X
         - XY backwards
-        - X backwars only, no X
+        - X backwards only, no X
         - XY movement favors moving towards the middle of the arena over moving towards the edges
     - A square is "open" if the following are true:
       - A non-moving unit is not currently located in that square
@@ -41,10 +41,11 @@ Pathfinding thought:
 
 1. Get current Manhattan Distance
 2. Follow "forward" pattern on open tiles
-  - If attack range circle
+
+- If adjacent to, that's a good target so go now
 3. Repeat once, removing the previous node from consideration
   - If no valid tile found, reset path and go back to 2, filtering out the attempted tile
   - If all valid tiles have a longer Manhattan Distance than from the previous tile, reset path and go back to 2, filtering out the attempted tile
-  - Otherwise the path has at least 2 valid steps
-4. Return the "Next" node
+  - Otherwise, the path has at least 2 valid steps
+4. Return the "Next" node NB: Target can become "blocked" and we need to handle it
 

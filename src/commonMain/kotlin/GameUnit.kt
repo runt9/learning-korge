@@ -1,27 +1,32 @@
 
+import Grid.diagonalTo
+import com.soywiz.klock.milliseconds
+import com.soywiz.klock.timesPerSecond
+import com.soywiz.korge.particle.ParticleEmitter
+import com.soywiz.korge.particle.ParticleEmitterView
+import com.soywiz.korge.particle.particleEmitter
+import com.soywiz.korge.ui.UIProgressBar
+import com.soywiz.korge.ui.buttonBackColor
+import com.soywiz.korge.ui.uiProgressBar
 import com.soywiz.korge.view.Container
-import com.soywiz.korge.view.Image
 import com.soywiz.korge.view.View
-import com.soywiz.korge.view.alpha
-import com.soywiz.korge.view.anchor
+import com.soywiz.korge.view.addFixedUpdater
 import com.soywiz.korge.view.center
-import com.soywiz.korge.view.circle
-import com.soywiz.korge.view.hitShape
 import com.soywiz.korge.view.image
+import com.soywiz.korge.view.rotation
+import com.soywiz.korge.view.tween.moveBy
+import com.soywiz.korge.view.tween.moveTo
 import com.soywiz.korge.view.xy
 import com.soywiz.korim.bitmap.Bitmap
-import com.soywiz.korim.bitmap.NativeImage
-import com.soywiz.korim.bitmap.context2d
-import com.soywiz.korim.color.Colors
+import com.soywiz.korim.color.RGBA
+import com.soywiz.korio.async.launchImmediately
 import com.soywiz.korio.lang.Cancellable
-import com.soywiz.korma.geom.PointInt
+import com.soywiz.korio.lang.cancel
 import com.soywiz.korma.geom.cosine
 import com.soywiz.korma.geom.degrees
 import com.soywiz.korma.geom.sine
-import com.soywiz.korma.geom.vector.LineCap
-import com.soywiz.korma.geom.vector.circle
-import com.soywiz.korma.geom.vector.lineTo
 import kotlin.coroutines.CoroutineContext
+import kotlin.random.Random
 
 class GameUnit(
     private val ctx: CoroutineContext,
@@ -29,57 +34,82 @@ class GameUnit(
     initialRotation: Int,
     initialX: Int,
     initialY: Int,
-    private val enemyTeam: Set<GameUnit>,
-    bitmap: Bitmap
+    val enemyTeam: Set<GameUnit>,
+    bitmap: Bitmap,
+    val hitParticles: ParticleEmitter
 ) : Container() {
     val body: View
 
-    private var target: GameUnit? = null
+    var target: GameUnit? = null
     private var attackJob: Cancellable? = null
     var isAttacking = false
-    private val attackRange = circle(cellSize.toDouble() / 2 + 5, fill = Colors.RED).anchor(0.25, 0.25).alpha(0.0)
-    private val aggroRange = circle(cellSize.toDouble()).anchor(0.25, 0.25).alpha(0.0)
     var aggroRangeFlat = 2
-    private val viewLine: View
-    private var pathToTarget = mutableListOf<PointInt>()
-    var gridPointPath = mutableListOf<GridPoint>()
-    private var currentPathGraphic: Image? = null
     var gridPos: GridPoint
+    var previousGridPos: GridPoint? = null
     var movingToGridPos: GridPoint? = null
-    val attackRangeAmt = cellSize / 2 + 5
-
+    var hp = Random.nextInt(100, 200)
+    var damage = Random.nextInt(20, 40)
+    var currentHitParticles: ParticleEmitterView? = null
+    var healthBar: UIProgressBar
 
     init {
         this.name = name
         xy(initialX, initialY)
         gridPos = GridPoint.fromWorldPoint(pos)
-        rotation = initialRotation.degrees
 
-        viewLine = image(NativeImage(cellSize, 2).context2d {
-            lineWidth = 0.05
-            lineCap = LineCap.ROUND
-            stroke(Colors.WHITE) {
-                moveTo(0.0, 0.5)
-                lineTo(cellSize, 0)
-            }
-            rotation = initialRotation.degrees
-            hitShape {
-                moveTo(0.0, 0.5)
-                lineTo(cellSize, 0)
-            }
-        }).alpha(1)
+        body = image(bitmap).center().rotation(initialRotation.degrees)
 
-        body = image(bitmap).center()
-        hitShape {
-            circle(0, 0, cellSize / 2 - 5)
+        healthBar = uiProgressBar(cellSize.toDouble() * 0.75, 2.0, current = hp.toDouble(), maximum = hp.toDouble()) {
+            // TODO: Not hard-coded
+            xy(-15.0, -20.0)
+            buttonBackColor = RGBA(0, 0, 0, 100)
+//            buttonNormal = Colors.GREEN
+        }
+    }
+
+    fun startAttacking() {
+        if (attackJob != null) {
+            return
         }
 
+        if (diagonalTo(target!!)) {
+            launchImmediately(ctx) {
+                moveBy(body.rotation.cosine * 3, body.rotation.sine * 3, time = 150.milliseconds)
+            }
+        }
+
+        previousGridPos = null
+
+        attackJob = addFixedUpdater(0.5.timesPerSecond) {
+            launchImmediately(ctx) {
+                val currentX = pos.x
+                val currentY = pos.y
+
+                moveBy(body.rotation.cosine * 3, body.rotation.sine * 3, time = 25.milliseconds)
+                moveTo(currentX, currentY, time = 150.milliseconds)
+
+                target?.let { t ->
+                    t.takeDamage(damage)
+
+                    if (t.hp <= 0) {
+                        UnitManager.unitKilled(t)
+                        target = null
+                        cancelAttacking()
+                    }
+                } ?: cancelAttacking()
+            }
+        }
     }
 
-
-    fun advance(amount: Double) {
-        x += (rotation).cosine * amount
-        y += (rotation).sine * amount
+    suspend fun takeDamage(damage: Int) {
+        hp -= damage
+        healthBar.current = hp.toDouble()
+        currentHitParticles?.removeFromParent()
+        currentHitParticles = particleEmitter(hitParticles, time = 50.milliseconds)
     }
 
+    fun cancelAttacking() {
+        attackJob?.cancel()
+        attackJob = null
+    }
 }
