@@ -1,161 +1,115 @@
-import Grid.getPathTo
-import Grid.gridAdjacentTo
-import Grid.gridPos
-import Grid.isNowBlocked
-import Grid.totalDistance
+
+import Grid.diagonalTo
 import com.soywiz.klock.milliseconds
 import com.soywiz.klock.timesPerSecond
+import com.soywiz.korge.particle.ParticleEmitter
+import com.soywiz.korge.particle.ParticleEmitterView
+import com.soywiz.korge.particle.particleEmitter
+import com.soywiz.korge.ui.UIProgressBar
+import com.soywiz.korge.ui.buttonBackColor
+import com.soywiz.korge.ui.uiProgressBar
 import com.soywiz.korge.view.Container
-import com.soywiz.korge.view.Image
 import com.soywiz.korge.view.View
 import com.soywiz.korge.view.addFixedUpdater
-import com.soywiz.korge.view.addTo
-import com.soywiz.korge.view.addUpdater
 import com.soywiz.korge.view.center
 import com.soywiz.korge.view.image
-import com.soywiz.korge.view.name
 import com.soywiz.korge.view.rotation
-import com.soywiz.korge.view.tween.rotateTo
+import com.soywiz.korge.view.tween.moveBy
+import com.soywiz.korge.view.tween.moveTo
 import com.soywiz.korge.view.xy
 import com.soywiz.korim.bitmap.Bitmap
-import com.soywiz.korim.bitmap.NativeImage
-import com.soywiz.korim.bitmap.context2d
-import com.soywiz.korim.color.Colors
-import com.soywiz.korio.async.launch
+import com.soywiz.korim.color.RGBA
 import com.soywiz.korio.async.launchImmediately
 import com.soywiz.korio.lang.Cancellable
 import com.soywiz.korio.lang.cancel
-import com.soywiz.korma.geom.Angle
 import com.soywiz.korma.geom.cosine
 import com.soywiz.korma.geom.degrees
 import com.soywiz.korma.geom.sine
-import com.soywiz.korma.geom.vector.LineCap
-import com.soywiz.korma.interpolation.Easing
-import kotlinx.coroutines.Job
 import kotlin.coroutines.CoroutineContext
+import kotlin.random.Random
 
 class GameUnit(
     private val ctx: CoroutineContext,
-    private val parent: Container,
     name: String,
     initialRotation: Int,
     initialX: Int,
     initialY: Int,
-    private val enemyTeam: Set<GameUnit>,
-    bitmap: Bitmap
-) {
-    //    private val image: View = parent.image(bitmap.sliceWithSize(100, 100, 50, 50))
-    val image: View = parent.image(bitmap)
-        .center()
-        .name(name)
-        .xy(initialX, initialY)
-        .rotation(initialRotation.degrees)
-        .addTo(parent)
-    private var target: GameUnit? = null
+    val enemyTeam: Set<GameUnit>,
+    bitmap: Bitmap,
+    val hitParticles: ParticleEmitter
+) : Container() {
+    val body: View
+
+    var target: GameUnit? = null
     private var attackJob: Cancellable? = null
-    private var moveCommand: Job? = null
     var isAttacking = false
-    private var currentPath: MutableList<GridPoint> = mutableListOf()
-    private var currentPathGraphic: Image? = null
-    var gridPos = image.gridPos()
+    var aggroRangeFlat = 2
+    var gridPos: GridPoint
+    var previousGridPos: GridPoint? = null
     var movingToGridPos: GridPoint? = null
+    var hp = Random.nextInt(100, 200)
+    var damage = Random.nextInt(20, 40)
+    var currentHitParticles: ParticleEmitterView? = null
+    var healthBar: UIProgressBar
 
     init {
-        image.scaledWidth = (cellSize - 10).toDouble()
-        image.scaledHeight = (cellSize - 10).toDouble()
+        this.name = name
+        xy(initialX, initialY)
+        gridPos = GridPoint.fromWorldPoint(pos)
 
-        image.addUpdater {
-            val scale = it / 16.milliseconds
+        body = image(bitmap).center().rotation(initialRotation.degrees)
 
-            if (target == null) {
-                refreshTargetAndPath()
-                return@addUpdater
+        healthBar = uiProgressBar(cellSize.toDouble() * 0.75, 2.0, current = hp.toDouble(), maximum = hp.toDouble()) {
+            // TODO: Not hard-coded
+            xy(-15.0, -20.0)
+            buttonBackColor = RGBA(0, 0, 0, 100)
+//            buttonNormal = Colors.GREEN
+        }
+    }
+
+    fun startAttacking() {
+        if (attackJob != null) {
+            return
+        }
+
+        if (diagonalTo(target!!)) {
+            launchImmediately(ctx) {
+                moveBy(body.rotation.cosine * 3, body.rotation.sine * 3, time = 150.milliseconds)
             }
+        }
 
-            if (gridAdjacentTo(target!!)) {
-                isAttacking = true
-                currentPathGraphic?.removeFromParent()
-                if (attackJob == null) {
-                    launchImmediately(ctx) {
-                        image.rotateTo(Angle.between(image.pos, target!!.image.pos), time = 150.milliseconds, easing = Easing.SMOOTH)
-                        attackJob = addFixedUpdater(1.timesPerSecond) {
-//                            println("[$name]: attack")
-                        }
+        previousGridPos = null
+
+        attackJob = addFixedUpdater(0.5.timesPerSecond) {
+            launchImmediately(ctx) {
+                val currentX = pos.x
+                val currentY = pos.y
+
+                moveBy(body.rotation.cosine * 3, body.rotation.sine * 3, time = 25.milliseconds)
+                moveTo(currentX, currentY, time = 150.milliseconds)
+
+                target?.let { t ->
+                    t.takeDamage(damage)
+
+                    if (t.hp <= 0) {
+                        UnitManager.unitKilled(t)
+                        target = null
+                        cancelAttacking()
                     }
-                }
-            } else {
-                isAttacking = false
-                attackJob?.cancel()
-
-                if (atDestination()) {
-                    finishPreviousMovement()
-                }
-
-                if (movingToGridPos == null || atDestination()) {
-                    beginNextMovement()
-                }
-
-                movingToGridPos?.run {
-                    advance(0.25 * scale)
-                }
+                } ?: cancelAttacking()
             }
         }
     }
 
-    private fun atDestination(): Boolean {
-        return movingToGridPos?.let { image.pos.distanceTo(it.worldX, it.worldY) <= 5 } ?: false
+    suspend fun takeDamage(damage: Int) {
+        hp -= damage
+        healthBar.current = hp.toDouble()
+        currentHitParticles?.removeFromParent()
+        currentHitParticles = particleEmitter(hitParticles, time = 50.milliseconds)
     }
 
-    private fun acquireTarget() {
-        target = enemyTeam.minByOrNull { this.getPathTo(it).totalDistance() }
+    fun cancelAttacking() {
+        attackJob?.cancel()
+        attackJob = null
     }
-
-    private fun refreshTargetAndPath() {
-        val previousTarget = target
-        acquireTarget()
-        target?.let {
-            if (previousTarget == it && !currentPath.isNowBlocked() && it.isAttacking) {
-                return@let
-            }
-
-            currentPath = getPathTo(it).toMutableList()
-            currentPathGraphic?.removeFromParent()
-            currentPathGraphic = parent.image(NativeImage(640, 360).context2d {
-                lineWidth = 0.05
-                lineCap = LineCap.ROUND
-                stroke(Colors.WHITE) {
-                    moveTo(image.x, image.y)
-                    currentPath.forEach { gp ->
-                        lineTo(gp.worldX, gp.worldY)
-                    }
-                }
-            })
-        }
-    }
-
-    private fun beginNextMovement() {
-        refreshTargetAndPath()
-        movingToGridPos = if (currentPath.isNotEmpty()) currentPath.removeFirst() else null
-
-        movingToGridPos?.let { nextNode ->
-            println("[${image.name} | ($gridPos)]: Moving to [$nextNode]")
-            Grid.blockPos(nextNode)
-            launch(ctx) {
-                image.rotateTo(Angle.between(gridPos, nextNode), time = 50.milliseconds, easing = Easing.SMOOTH)
-            }
-        }
-    }
-
-    private fun finishPreviousMovement() {
-        movingToGridPos?.let { nextNode ->
-            println("[${image.name} | ($gridPos)]: COMPLETE: Moving to [$nextNode]")
-            Grid.unblockPos(gridPos)
-            gridPos = nextNode
-        }
-    }
-}
-
-fun View.advance(amount: Double) = this.apply {
-    x += (rotation).cosine * amount
-    y += (rotation).sine * amount
 }
